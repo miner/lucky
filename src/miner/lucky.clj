@@ -1,12 +1,29 @@
 (ns miner.lucky
   (:require [clojure.core.rrb-vector :as fv]
             [clojure.data.avl :as avl]
+            [aatree.core :as aa]
             [clojure.data.int-map :as im]))
 
 ;; Someone asked how to do this on the mailing list.  Led to a bit of discussion where I
 ;; finally came up with the lucky-avl solution (very fast!) after a couple of misfires.
 ;;
 ;; http://en.wikipedia.org/wiki/Lucky_number
+
+;; More references
+;; https://oeis.org/A000959
+
+;; Variant: Even lucky numbers
+;; like Lucky numbers but starting with even numbers
+;; https://oeis.org/A045954
+
+;; More information:
+;; http://archive.wikiwix.com/cache/?url=http://www.sciencenews.org/sn_arc97/9_6_97/mathland.htm&title=
+
+
+;; SEM : need to try with Java array mutable
+
+
+
 
 ;; SEM: I decided I didn't like the semantics of this.  Prefer something more like
 ;; complement of take-nth.  See my-drop-nth for better version.  Also, this one blows up for
@@ -35,8 +52,8 @@
 (defn lucky1
   ([max] (sequence (when (pos? max) (lucky1 1 (quot max 2) (range 1 max 2)))))
   ([i cnt acc]
-   (let [n (nth acc i nil)]
-     (if (and n (<= n cnt))
+   (let [n (long (nth acc i Long/MAX_VALUE))]
+     (if (<= n cnt)
        (recur (inc i) (- cnt (quot cnt n)) (drop-nth1 n acc))
        acc))))
 
@@ -74,8 +91,8 @@
 (defn lucky-no-good
   ([max] (when (pos? max) (lucky-no-good 1 (vec (range 1 max 2)))))
   ([i rrb]
-   (let [n (nth rrb i nil)]
-     (if-let [n (and n (<= n (count rrb)) n)]
+   (let [n (long (nth rrb i Long/MAX_VALUE))]
+     (if (<= n (count rrb))
        (recur (inc i) (dis-nth n rrb))
        (seq rrb)))))
 
@@ -155,8 +172,8 @@
   ([i iset]
    ;; WARNING: assuming that iset seq is automagically sorted, seems to be stable at least
    (let [v (vec (seq iset))
-         n (nth v i nil)]
-     (if (and n (<= n (count v)))
+         n (long (nth v i Long/MAX_VALUE))]
+     (if (<= n (count v))
        (recur (inc i) (reduce (fn [sss m] (disj sss (nth v m)))
                               iset
                               (range (dec n) (count v) n)))
@@ -176,8 +193,8 @@
    ;; WARNING: assuming that iset seq is automagically sorted, seems to be stable at least
    (let [sss (seq iset)
          v (vec sss)
-         n (nth v i nil)]
-     (if (and n (<= n (count v)))
+         n (long (nth v i Long/MAX_VALUE))]
+     (if (<= n (count v))
        (recur (inc i)
               (im/difference iset
                              (im/dense-int-set (take-nth n (drop (dec n) sss)))))
@@ -291,6 +308,42 @@
   (my-drop-nth n (lazy-cat '(nil) coll)))
 
 
+
+;; Reminder: the eager way to concat two vectors is just to use (into v1 v2)
+
+;; Note: lucky style is to drop at end Nth, unlike Clojure take-nth which always takes first and
+;; nth thereafter.
+
+(defn vdrop-nth [n v]
+  (loop [res (transient []) remaining v]
+    (if (< (count remaining) n)
+      (persistent! (reduce conj! res remaining))
+      (recur (reduce conj! res (subvec remaining 0 (dec n))) (subvec remaining n)))))
+
+(defn vrange
+  ([end] (vrange 0 end 1))
+  ([start end] (vrange start end 1))
+  ([start end step]
+   (loop [tv (transient []) n start]
+     (if (< n end)
+       (recur (conj! tv n) (+ n step))
+       (persistent! tv)))))
+
+;; somewhat faster than lucky5t
+(defn lucky-eager
+  ([max] (sequence (when (pos? max) (lucky-eager 1 (vrange 1 max 2)))))
+  ([i surv]
+   (let [n (nth surv i Long/MAX_VALUE)]
+     (if (<= n (count surv))
+       (recur (inc i) (vdrop-nth n surv))
+       surv))))
+
+
+
+
+
+
+
 ;;; SEM: still thinking about the utilty vs. API cost of OFFSET arg -- nothing else has an
 ;;; offset so it's not worth the confusion.
 (defn offset-drop-nth
@@ -331,13 +384,9 @@
 (defn lazy-drop-nth-trans [n coll]
   (sequence (comp (partition-all n) (mapcat rest)) coll))
 
-(defn lazy-drop-nth-trans [n coll]
-  (sequence (comp (partition-all n) (mapcat rest)) coll))
-
 
 
 ;; IDEA: take-drop-stepper [2 -3 4] cycles taking and dropping according to sign
-
 
 
 
@@ -349,8 +398,8 @@
 (defn lucky11
   ([max] (sequence (when (pos? max) (lucky11 1 (quot max 2) (range 1 max 2)))))
   ([i cnt acc]
-   (let [n (nth acc i nil)]
-     (if (and n (<= n cnt))
+   (let [n (long (nth acc i Long/MAX_VALUE))]
+     (if (<= n cnt)
        (recur (inc i) (- cnt (quot cnt n)) (lucky-drop-nth n acc))
        acc))))
 
@@ -359,28 +408,115 @@
 (defn lucky5t
   ([max] (sequence (when (pos? max) (lucky5t 1 (quot max 2) (range 1 max 2)))))
   ([i cnt acc]
-   (let [n (nth acc i nil)]
-     (if (and n (<= n cnt))
+   (let [n (long (nth acc i Long/MAX_VALUE))]
+     (if (<= n cnt)
        (recur (inc i) (- cnt (quot cnt n)) (transduce (offset-drop-nth (dec n) n) conj [] acc))
        acc))))
 
 
 
 
+
+;; AATree lib supports a sorted-set with nth, but it's not as good as AVL.
+
+(defn aa-sorted-set
+  ([] (aa/new-sorted-set (aa/basic-opts)))
+  ([coll] (into (aa-sorted-set) coll)))
+
+(defn lucky-aa
+  ([max] (lucky-aa 1 (aa-sorted-set (range 1 max 2))))
+  ([i aaset]
+   (let [n (long (nth aaset i Long/MAX_VALUE))]
+     (if (<= n (count aaset))
+       (recur (inc i) (reduce (fn [sss m] (disj sss (nth aaset m)))
+                              aaset
+                              (range (dec n) (count aaset) n)))
+       (sequence aaset)))))
+
+
+;; tried using range-down and nth of sss but it was slower for lucky-aa
+
+;; Note: Transients not supported for AA sorted-set.
+
+
+
+
+;; AASet bug with nth not-found
+;; fixed as of 0.6.2-SNAPSHOT 
+
+
+
+
+
+;; Note: nth is not supported on the standard Clojure sorted-set.  However, the contrib avl
+;; lib does support a sorted-set with nth.  Just what we need!
+
 ;; I decided range-down wasn't really necessary, as the persistent avl is still there in nth
-;; order.  Tested both and there wasn't much difference.  As noted above, transient didn't
-;; help because nth doesn't work on the transient.
+;; order.  Tested both and there wasn't much difference.  Transients didn't help because nth
+;; doesn't work on the transient.
+;;
+;; My attempt to use transients got...
+;; UnsupportedOperationException nth not supported on this type: AVLTransientSet
+
 
 ;; By far the fastest.  And robust over 1e6.
 (defn lucky-avl
-  ([max] (lucky-avl 1 (apply avl/sorted-set (range 1 max 2))))
+  ([max] (lucky-avl 1 (into (avl/sorted-set) (range 1 max 2))))
   ([i avl]
-   (let [n (nth avl i nil)]
-     (if (and n (<= n (count avl)))
+   (let [n (nth avl i Long/MAX_VALUE)]
+     (if (<= n (count avl))
        (recur (inc i) (reduce (fn [sss m] (disj sss (nth avl m)))
                               avl
                               (range (dec n) (count avl) n)))
        (sequence avl)))))
 
 
+
+;; gen-lucky-ss should work with any persistent sorted-set implementation that supports nth
+;; (unlike the built-in Clojure sorted-set).  Of course, conj, disj, and count would naturally be
+;; required as well.  It will stress the persistence by making lots of small "updates" with
+;; disj. The init-ss should be an empty sorted-set that will be populated by conj.
+
+(defn gen-lucky-ss
+  ([init-ss] (gen-lucky-ss init-ss 1))
+  ([init-ss start]
+   (fn [max]
+     (let [lucky (fn [i ss]
+                   (let [n (nth ss i Long/MAX_VALUE)]
+                     (if (<= n (count ss))
+                       (recur (inc i) (reduce (fn [sss m] (disj sss (nth ss m)))
+                                              ss
+                                              (range (dec n) (count ss) n)))
+                       (sequence ss))))]
+       (lucky 1 (into init-ss (range start max 2)))))))
+
+
 ;; SEM: wondering about using avl approach for primes.  Answer: not so good.
+
+
+;; variant that just starts with the even numbers
+;; (only change is the start of the range, from 1 to 2)
+;; note results never include the MAX
+(defn even-lucky-avl
+  ([max] (lucky-avl 1 (into (avl/sorted-set) (range 2 max 2))))
+  ([i avl]
+   (let [n (nth avl i Long/MAX_VALUE)]
+     (if (<= n (count avl))
+       (recur (inc i) (reduce (fn [sss m] (disj sss (nth avl m)))
+                              avl
+                              (range (dec n) (count avl) n)))
+       (sequence avl)))))
+
+
+;; https://oeis.org/A045954
+(def even-lucky-100 [2, 4, 6, 10, 12, 18, 20, 22, 26, 34, 36, 42, 44, 50, 52, 54, 58, 68,
+                     70, 76, 84, 90, 98])
+
+(def even-lucky-301 [2, 4, 6, 10, 12, 18, 20, 22, 26, 34, 36, 42, 44, 50, 52, 54, 58, 68,
+                     70, 76, 84, 90, 98, 100, 102, 108, 114, 116, 118, 130, 132, 138, 140,
+                     148, 150, 164, 170, 172, 178, 182, 186, 196, 198, 212, 214, 218, 228,
+                     230, 234, 244, 246, 260, 262, 268, 278, 282, 290, 298, 300])
+
+
+
+

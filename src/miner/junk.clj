@@ -111,3 +111,76 @@
      coll
      (lazy-drop-nth n (rest coll)))))
 
+
+
+;; won't work for lucky-avl because the step-fn typically also needs the original avl as a
+;; free variable.  Maybe could make it work with the range-down, which would let you disj
+;; from the end without screwing up indices.
+(defn generic-lucky
+  ([init-sorted-set step-fn] (generic-lucky init-sorted-set step-fn 1))
+  ([init-sorted-set step-fn start]
+   (let [lucky (fn [i sorteds]
+                 (let [n (nth sorteds i Long/MAX_VALUE)]
+                   (if (<= n (count sorteds))
+                     (recur (inc i) (reduce step-fn sorteds (range (dec n) (count sorteds) n)))
+                     (sequence sorteds))))]
+     (fn [max] (lucky 1 (into init-sorted-set (range start max 2)))))))
+
+
+
+
+
+
+
+;; hack to get type hints into vswap!
+;; NEEDS REVIEW
+
+;; might be wrong about how the tag gets transmitted long vs 'long (quote????)
+(defmacro tvswap!
+  "SEM but tag comes as first arg.  Non-atomically swaps the value of the volatile as if:
+   (apply f current-value-of-vol args). Returns the value that
+   was swapped in."
+  [tag vol f & args]
+  (let [v (with-meta vol {:tag 'clojure.lang.Volatile})
+        tagged (with-meta (gensym) {:tag tag})]
+     `(let [~tagged (.deref ~v)] (.reset ~v (~f ~tagged ~@args)))))
+
+;; NOT SURE ABOUT THIS
+(defmacro vlswap!
+  "Non-atomically swaps the value of the volatile as if:
+   (apply f current-value-of-vol args). Returns the value that
+   was swapped in.  Requires that volatile always holds a long."
+  [vol f & args]
+  (let [v (with-meta vol {:tag 'clojure.lang.Volatile})
+        tagged (with-meta (gensym) {:tag 'long})]
+     `(let [~tagged (.deref ~v)] (long (.reset ~v (~f ~tagged ~@args))))))
+  
+
+
+
+;; https://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetNaive
+
+;; WRONG  probably messed up unsigned int
+(defn bitpop [v]
+  (let [v (int v)
+        v (int (- v (bit-and (bit-shift-right v 1) (int 0x55555555))))
+        v (int (+ (bit-and v (int 0x33333333)) (bit-and (bit-shift-right v 2) (int 0x33333333))))]
+    (bit-shift-right (* (int 0x1010101) (bit-and (int 0xF0F0F0F) (+ v (bit-shift-right v 4))))
+                     24)))
+
+
+;; func bkpop(n: Int) -> Int {
+;;     var v: UInt32 = UInt32(n)
+;;     var c: UInt32 = 0
+;;     for (c = 0; v != 0; c++) {
+;;         v &= v - 1
+;;     }
+;;     return Int(c)
+;; }
+
+;; originally for 32-bit unsigned
+(defn bkpop [n]
+  (loop [c (int 0) v (int n)]
+    (if (= v 0)
+      c
+      (recur (inc c) (bit-and v (dec v))))))
