@@ -1,7 +1,6 @@
 (ns miner.lucky
   (:require [clojure.core.rrb-vector :as fv]
             [clojure.data.avl :as avl]
-            [aatree.core :as aa]
             [clojure.data.int-map :as im]))
 
 ;; Someone asked how to do this on the mailing list.  Led to a bit of discussion where I
@@ -413,36 +412,6 @@
        (recur (inc i) (- cnt (quot cnt n)) (transduce (offset-drop-nth (dec n) n) conj [] acc))
        acc))))
 
-
-
-
-
-;; AATree lib supports a sorted-set with nth, but it's not as good as AVL.
-
-(defn aa-sorted-set
-  ([] (aa/new-sorted-set (aa/basic-opts)))
-  ([coll] (into (aa-sorted-set) coll)))
-
-(defn lucky-aa
-  ([max] (lucky-aa 1 (aa-sorted-set (range 1 max 2))))
-  ([i aaset]
-   (let [n (long (nth aaset i Long/MAX_VALUE))]
-     (if (<= n (count aaset))
-       (recur (inc i) (reduce (fn [sss m] (disj sss (nth aaset m)))
-                              aaset
-                              (range (dec n) (count aaset) n)))
-       (sequence aaset)))))
-
-
-;; tried using range-down and nth of sss but it was slower for lucky-aa
-
-;; Note: Transients not supported for AA sorted-set.
-
-
-
-
-;; AASet bug with nth not-found
-;; fixed as of 0.6.2-SNAPSHOT 
 
 
 
