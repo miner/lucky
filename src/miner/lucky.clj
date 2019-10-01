@@ -426,7 +426,9 @@
 ;;
 ;; My attempt to use transients got...
 ;; UnsupportedOperationException nth not supported on this type: AVLTransientSet
-
+;;
+;; It works if you go in and out of transients and persistents as in lucky-avl1. 
+;; It's actually faster, but somewhat ugly code.
 
 ;; By far the fastest.  And robust over 1e6.
 (defn lucky-avl
@@ -438,6 +440,17 @@
                               avl
                               (range (dec n) (count avl) n)))
        (sequence avl)))))
+
+;; faster than lucky-avl but somewhat uglier
+(defn lucky-avl1
+  ([max] (lucky-avl1 1 (persistent! (reduce conj! (transient (avl/sorted-set)) (range 1 max 2)))))
+  ([i avl]
+   (let [n (nth avl i Long/MAX_VALUE)]
+     (if (<= n (count avl))
+       (recur (inc i) (persistent! (reduce (fn [sss m] (disj! sss (nth avl m)))
+                                           (transient avl)
+                                           (range (dec n) (count avl) n))))
+       (seq avl)))))
 
 
 
@@ -461,6 +474,20 @@
 
 
 ;; SEM: wondering about using avl approach for primes.  Answer: not so good.
+
+;; Criterium should be available in my build settings, but it would be better to explicitly
+;; require it in the (ns ...)
+
+(require '[criterium.core :as cc])
+
+(defn ben [& luckys]
+  (let [cnt1 (when (number? (first luckys)) (long (first luckys)))
+        luckys (if cnt1 (rest luckys) luckys)
+        cnt (or cnt1 10000)]
+  (doseq [luck luckys]
+    (println)
+    (println (str luck) cnt)
+    (cc/quick-bench (luck cnt)))))
 
 
 ;; variant that just starts with the even numbers
