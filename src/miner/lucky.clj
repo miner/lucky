@@ -124,7 +124,19 @@
      (if (< n (count v))
        (recur (inc i) (iset-disj-nth n v iset))
        (seq iset)))))
-  
+
+
+(defn lucky-iset2
+  ([max] (when (pos? max) (lucky-iset 1 (im/dense-int-set (range 1 max 2)))))
+  ([i iset]
+   ;; WARNING: assuming that iset seq is automagically sorted (seems to be stable at least)
+   (let [v (vector-of :long (seq iset))
+         n (nth v i Long/MAX_VALUE)]
+     (if (< n (count v))
+       (recur (inc i) (iset-disj-nth n v iset))
+       (seq iset)))))
+
+
 
 
 
@@ -338,6 +350,15 @@
        surv))))
 
 
+;; slightly slower with vector-of
+(defn lucky-eager3
+  ([max] (sequence (when (pos? max) (lucky-eager3 1 (into (vector-of :long) (range 1 max 2))))))
+  ([i surv]
+   (let [n (nth surv i Long/MAX_VALUE)]
+     (if (> n (count surv))
+       surv
+       (recur (inc i) (vdrop-nth n surv))))))
+
 
 
 
@@ -480,13 +501,15 @@
 
 (require '[criterium.core :as cc])
 
+(require '[clojure.string :as str])
+
+
 (defn ben [& luckys]
   (let [cnt1 (when (number? (first luckys)) (long (first luckys)))
         luckys (if cnt1 (rest luckys) luckys)
         cnt (or cnt1 10000)]
   (doseq [luck luckys]
-    (println)
-    (println (str luck) cnt)
+    (printf "\n(%s %d)\n" (clojure.repl/demunge (pr-str (class luck))) cnt)
     (cc/quick-bench (luck cnt)))))
 
 
