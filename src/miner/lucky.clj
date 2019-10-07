@@ -503,6 +503,7 @@
 
 (require '[clojure.string :as str])
 
+(require 'clojure.repl)
 
 (defn ben [& luckys]
   (let [cnt1 (when (number? (first luckys)) (long (first luckys)))
