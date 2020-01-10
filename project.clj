@@ -1,4 +1,4 @@
-(defproject com.velisco/lucky "0.1.0-SNAPSHOT"
+(defproject com.velisco/lucky "0.1.1-SNAPSHOT"
   :description "FIXME: write description"
   :url "https://github.com/miner/lucky"
   :license {:name "Eclipse Public License"
